@@ -79,24 +79,23 @@ def strip_fnc1_prefix(raw: str) -> str:
         return raw[2:]
     return raw
 
-
 def is_plain_datamatrix_mark(raw: str) -> bool:
-    """
-    Short legacy format:
-    \F01 + GTIN14 + serial
-    without explicit AI 21.
-
-    Encode this as ordinary DataMatrix, not GS1 DataMatrix.
-    """
     value = strip_fnc1_prefix(raw)
 
-    return (
+    # Формат 2: \F01 + GTIN14 + serial без AI21
+    if (
         value.startswith("01")
         and len(value) > 16
         and value[2:16].isdigit()
         and not value[16:].startswith("21")
-    )
+    ):
+        return True
 
+    # Формат 3: просто числовая марка/код, не GS1
+    if value.isdigit() and 8 <= len(value) <= 64:
+        return True
+
+    return False
 
 def normalize_gs1_mark(raw: str) -> str:
     raw = strip_fnc1_prefix(decode_input(raw))
