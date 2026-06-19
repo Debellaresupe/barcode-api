@@ -74,12 +74,32 @@ def decode_input(raw: str) -> str:
     )
 
 
-def normalize_mark(raw: str) -> str:
-    raw = decode_input(raw)
-
-    # TEC-IT-like FNC1 prefix, e.g. \F010460...
+def strip_fnc1_prefix(raw: str) -> str:
     if raw.startswith("\\F"):
-        raw = raw[2:]
+        return raw[2:]
+    return raw
+
+
+def is_plain_datamatrix_mark(raw: str) -> bool:
+    """
+    Short legacy format:
+    \F01 + GTIN14 + serial
+    without explicit AI 21.
+
+    Encode this as ordinary DataMatrix, not GS1 DataMatrix.
+    """
+    value = strip_fnc1_prefix(raw)
+
+    return (
+        value.startswith("01")
+        and len(value) > 16
+        and value[2:16].isdigit()
+        and not value[16:].startswith("21")
+    )
+
+
+def normalize_gs1_mark(raw: str) -> str:
+    raw = strip_fnc1_prefix(decode_input(raw))
 
     if not raw.startswith("01") or len(raw) < 16:
         raise HTTPException(400, "GS1 mark must start with 01 + GTIN14")
@@ -96,8 +116,8 @@ def normalize_mark(raw: str) -> str:
     rest = rest[2:]
     parts = rest.split(GS)
 
-    if len(parts) < 2:
-        raise HTTPException(400, "Expected GS separator after AI 21 serial")
+    if len(parts) < 1:
+        raise HTTPException(400, "Expected AI 21 serial")
 
     serial = parts[0]
 
@@ -113,6 +133,7 @@ def normalize_mark(raw: str) -> str:
             continue
 
         matched_ai = None
+        value = ""
 
         for ai in supported_ais:
             if part.startswith(ai):
@@ -149,13 +170,11 @@ def barcode_png(
     if barcode_type == "ean13":
         if not re.fullmatch(r"\d{13}", data):
             raise HTTPException(400, "EAN-13 must be exactly 13 digits")
-
         png = make_png("EANX", data)
 
     elif barcode_type == "ean8":
         if not re.fullmatch(r"\d{8}", data):
             raise HTTPException(400, "EAN-8 must be exactly 8 digits")
-
         png = make_png("6", data)
 
     elif barcode_type == "qr":
@@ -170,20 +189,35 @@ def barcode_png(
         )
 
     elif barcode_type in ("gs1-dm", "datamatrix-gs1"):
-        zint_data = normalize_mark(data)
+        decoded_data = decode_input(data)
+        plain_data = strip_fnc1_prefix(decoded_data)
 
-        png = make_png(
-            "DATAMATRIX",
-            zint_data,
-            extra_args=[
-                "--gs1",
-                "--gssep",
-                "--square",
-                "--notext",
-                "--scale=8",
-                "--border=10",
-            ],
-        )
+        if is_plain_datamatrix_mark(decoded_data):
+            png = make_png(
+                "DATAMATRIX",
+                plain_data,
+                extra_args=[
+                    "--square",
+                    "--notext",
+                    "--scale=8",
+                    "--border=10",
+                ],
+            )
+        else:
+            zint_data = normalize_gs1_mark(data)
+
+            png = make_png(
+                "DATAMATRIX",
+                zint_data,
+                extra_args=[
+                    "--gs1",
+                    "--gssep",
+                    "--square",
+                    "--notext",
+                    "--scale=8",
+                    "--border=10",
+                ],
+            )
 
     else:
         raise HTTPException(
