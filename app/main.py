@@ -106,20 +106,27 @@ def normalize_mark(raw: str) -> str:
 
     result = f"[01]{gtin}[21]{serial}"
 
+    supported_ais = ("240", "91", "92", "93")
+
     for part in parts[1:]:
         if not part:
             continue
 
-        ai = part[:2]
-        value = part[2:]
+        matched_ai = None
 
-        if ai not in ("91", "92", "93"):
-            raise HTTPException(400, f"Unsupported AI after GS: {ai}")
+        for ai in supported_ais:
+            if part.startswith(ai):
+                matched_ai = ai
+                value = part[len(ai):]
+                break
+
+        if matched_ai is None:
+            raise HTTPException(400, f"Unsupported AI after GS: {part[:4]}")
 
         if not value:
-            raise HTTPException(400, f"AI {ai} value is empty")
+            raise HTTPException(400, f"AI {matched_ai} value is empty")
 
-        result += f"[{ai}]{value}"
+        result += f"[{matched_ai}]{value}"
 
     return result
 
