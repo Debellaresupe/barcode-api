@@ -1,0 +1,7 @@
+services:
+  barcode-api:
+    build: .
+    container_name: barcode-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
